@@ -19,7 +19,7 @@ func NewReportHandler(uc *usecase.ReportUseCase) *ReportHandler {
 	return &ReportHandler{reportUC: uc}
 }
 
-func (h *ReportHandler) GetReportHistory(c *fiber.Ctx) error {
+func (h *ReportHandler) GetMonthlyClosingReports(c *fiber.Ctx) error {
 	page, err := strconv.Atoi(c.Query("page", "1"))
 	if err != nil || page < 1 {
 		page = 1

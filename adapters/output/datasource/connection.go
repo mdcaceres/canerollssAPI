@@ -63,10 +63,31 @@ func Connect() {
 	log.Println("Database schema migration completed successfully.")
 
 	seedAdminUser(conn)
+	seedToppings(conn)
 }
 
 func GetDB() *gorm.DB {
 	return DB
+}
+
+func seedToppings(db *gorm.DB) {
+	var count int64
+	db.Model(&domain.Topping{}).Count(&count)
+
+	if count == 0 {
+		defaultToppings := []domain.Topping{
+			{Name: "Clasico", SinglePrice: 4000, ComboPrice: 7000, IsActive: true},
+			{Name: "Dulce de leche", SinglePrice: 4000, ComboPrice: 7600, IsActive: true},
+			{Name: "Avellana", SinglePrice: 6000, ComboPrice: 11000, IsActive: true},
+			{Name: "Oreo", SinglePrice: 4000, ComboPrice: 7600, IsActive: true},
+			{Name: "Pistacho premium", SinglePrice: 6500, ComboPrice: 12000, IsActive: true},
+		}
+		
+		for _, topping := range defaultToppings {
+			db.Create(&topping)
+		}
+		log.Println("Default toppings seeded successfully.")
+	}
 }
 
 func seedAdminUser(db *gorm.DB) {
@@ -78,28 +99,45 @@ func seedAdminUser(db *gorm.DB) {
 		adminPass = "admin123"
 	}
 
-	var count int64
-	db.Model(&domain.User{}).Where("role = ?", "ADMIN").Count(&count)
+	var admin domain.User
+	result := db.Where("role = ?", "ADMIN").First(&admin)
 
-	if count == 0 {
+	if result.Error != nil {
+		// Create new admin
 		hash, err := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
 		if err != nil {
 			log.Printf("Failed to hash seeder password: %v", err)
 			return
 		}
 
-		admin := domain.User{
+		newAdmin := domain.User{
 			Username:     adminUser,
 			PasswordHash: string(hash),
 			Role:         "ADMIN",
 			IsActive:     true,
 		}
 
-		if err := db.Create(&admin).Error; err != nil {
+		if err := db.Create(&newAdmin).Error; err != nil {
 			log.Printf("Failed to seed admin user: %v", err)
 			return
 		}
 
 		log.Printf("Default admin user created successfully (username: %s)", adminUser)
+	} else {
+		// Update existing admin if password changed in .env
+		err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(adminPass))
+		if err != nil {
+			hash, errHash := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
+			if errHash == nil {
+				admin.Username = adminUser
+				admin.PasswordHash = string(hash)
+				db.Save(&admin)
+				log.Printf("Admin credentials updated from .env (username: %s)", adminUser)
+			}
+		} else if admin.Username != adminUser {
+			admin.Username = adminUser
+			db.Save(&admin)
+			log.Printf("Admin username updated from .env (username: %s)", adminUser)
+		}
 	}
 }

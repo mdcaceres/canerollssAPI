@@ -5,9 +5,6 @@ import (
 	"canerollss/ports/output"
 	"errors"
 	"time"
-
-	"github.com/go-sql-driver/mysql"
-	"gorm.io/gorm"
 )
 
 type ReportUseCase struct {
@@ -35,11 +32,12 @@ func (u *ReportUseCase) CloseMonth(year, month int) (*domain.MonthlyClosing, err
 		return nil, errors.New("invalid month or year")
 	}
 
-	existing, err := u.repo.GetByMonthAndYear(month, year)
-	if err == nil {
-		return existing, nil
+	now := time.Now()
+	if year > now.Year() || (year == now.Year() && month > int(now.Month())) {
+		return nil, errors.New("cannot close future months")
 	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+
+	if err := u.repo.DeleteByMonthAndYear(month, year); err != nil {
 		return nil, err
 	}
 
@@ -91,13 +89,6 @@ func (u *ReportUseCase) CloseMonth(year, month int) (*domain.MonthlyClosing, err
 	}
 
 	if err := u.repo.SaveWithMetrics(closing); err != nil {
-		if isDuplicateKeyError(err) {
-			existing, findErr := u.repo.GetByMonthAndYear(month, year)
-			if findErr == nil {
-				return existing, nil
-			}
-			return nil, findErr
-		}
 		return nil, err
 	}
 
@@ -108,10 +99,3 @@ func isValidMonthYear(month, year int) bool {
 	return month >= 1 && month <= 12 && year > 0
 }
 
-func isDuplicateKeyError(err error) bool {
-	var myErr *mysql.MySQLError
-	if errors.As(err, &myErr) {
-		return myErr.Number == 1062
-	}
-	return false
-}

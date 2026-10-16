@@ -11,7 +11,6 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
@@ -33,12 +32,14 @@ func Start() {
 	catalogUC := usecase.NewCatalogUseCase(toppingRepo)
 	orderUC := usecase.NewOrderUseCase(orderRepo, cashRepo, customerRepo, toppingRepo)
 	reportUC := usecase.NewReportUseCase(reportRepo, orderRepo)
+	customerUC := usecase.NewCustomerUseCase(customerRepo)
 
 	authHandler := handlers.NewAuthHandler(authUC)
 	cashHandler := handlers.NewCashHandler(cashUC)
 	catalogHandler := handlers.NewCatalogHandler(catalogUC)
 	orderHandler := handlers.NewOrderHandler(orderUC)
 	reportHandler := handlers.NewReportHandler(reportUC)
+	customerHandler := handlers.NewCustomerHandler(customerUC)
 
 	app := fiber.New()
 
@@ -50,15 +51,10 @@ func Start() {
 	}
 
 	app.Use("/",
-		cors.New(cors.Config{
-			AllowCredentials: true,
-			AllowOrigins:     "http://localhost:4200",
-			AllowMethods:     "POST, PUT, DELETE, GET, OPTIONS",
-		}),
 		logger.New(loggerConfig),
 	)
 
-	routes.MapUrls(app, authHandler, cashHandler, catalogHandler, orderHandler, reportHandler)
+	routes.MapUrls(app, authHandler, cashHandler, catalogHandler, orderHandler, reportHandler, customerHandler)
 
 	logs.InfoLog.Println("Fresh out of the oven")
 

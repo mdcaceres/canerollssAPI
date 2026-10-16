@@ -8,5 +8,6 @@ type MonthlyClosingRepository interface {
 	Save(closing *domain.MonthlyClosing) error
 	SaveWithMetrics(closing *domain.MonthlyClosing) error
 	GetByMonthAndYear(month, year int) (*domain.MonthlyClosing, error)
+	DeleteByMonthAndYear(month, year int) error
 	GetHistory(page, pageSize int) ([]domain.MonthlyClosing, int64, error)
 }

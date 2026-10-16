@@ -35,6 +35,20 @@ func (r *monthlyClosingRepository) GetByMonthAndYear(month, year int) (*domain.M
 	return &m, err
 }
 
+func (r *monthlyClosingRepository) DeleteByMonthAndYear(month, year int) error {
+	var m domain.MonthlyClosing
+	if err := r.db.Where("month = ? AND year = ?", month, year).First(&m).Error; err != nil {
+		return nil // if it doesn't exist, we consider it successfully "deleted"
+	}
+	
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("monthly_closing_id = ?", m.ID).Delete(&domain.MonthlyToppingMetric{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&m).Error
+	})
+}
+
 func (r *monthlyClosingRepository) GetHistory(page, pageSize int) ([]domain.MonthlyClosing, int64, error) {
 	var history []domain.MonthlyClosing
 	var total int64

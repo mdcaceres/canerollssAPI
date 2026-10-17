@@ -6,7 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func MapWebhookRoutes(app *fiber.App, waH *handlers.WhatsAppHandler, mpH *handlers.MercadoPagoHandler) {
+func MapWebhookRoutes(app *fiber.App, waH *handlers.WhatsAppHandler, mpH *handlers.MercadoPagoHandler, uber ...*handlers.UberDeliveryWebhookHandler) {
 	webhookGroup := app.Group("/webhook")
 
 	// WhatsApp Cloud API
@@ -21,4 +21,7 @@ func MapWebhookRoutes(app *fiber.App, waH *handlers.WhatsAppHandler, mpH *handle
 
 	// Mercado Pago IPN
 	webhookGroup.Post("/mercadopago", mpH.HandleWebhook)
+	if len(uber) > 0 && uber[0] != nil {
+		webhookGroup.Post("/uber-delivery", uber[0].HandleWebhook)
+	}
 }

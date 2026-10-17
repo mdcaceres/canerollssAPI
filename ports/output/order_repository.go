@@ -10,6 +10,7 @@ type OrderRepository interface {
 	GetByID(id uint) (*domain.Order, error)
 	GetByRegisterID(registerID uint) ([]domain.Order, error)
 	GetByExternalPaymentID(externalPaymentID string) (*domain.Order, error)
+	GetByExternalDeliveryID(externalDeliveryID string) (*domain.Order, error)
 	Update(order *domain.Order) error
 	GetCompletedByRegisterID(regID uint) ([]domain.Order, error)
 	GetCompletedByDateRange(start, end time.Time) ([]domain.Order, error)

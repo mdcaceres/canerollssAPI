@@ -39,6 +39,14 @@ func (m *mockOrderRepo) GetByExternalPaymentID(extID string) (*domain.Order, err
 	}
 	return nil, nil
 }
+func (m *mockOrderRepo) GetByExternalDeliveryID(id string) (*domain.Order, error) {
+	for _, o := range m.orders {
+		if o.ExternalDeliveryID == id {
+			return &o, nil
+		}
+	}
+	return nil, nil
+}
 func (m *mockOrderRepo) Update(order *domain.Order) error {
 	for i, o := range m.orders {
 		if o.ID == order.ID {
@@ -63,8 +71,8 @@ func (m *mockCashRepo) GetActive() (*domain.CashRegister, error) {
 	}
 	return m.active, nil
 }
-func (m *mockCashRepo) Save(c *domain.CashRegister) error          { return nil }
-func (m *mockCashRepo) Update(c *domain.CashRegister) error        { return nil }
+func (m *mockCashRepo) Save(c *domain.CashRegister) error   { return nil }
+func (m *mockCashRepo) Update(c *domain.CashRegister) error { return nil }
 func (m *mockCashRepo) GetHistory(page, pageSize int) ([]domain.CashRegister, int64, error) {
 	return nil, 0, nil
 }
@@ -155,6 +163,7 @@ func (m *mockDelivery) QuoteDelivery(ctx context.Context, address *domain.Custom
 func (m *mockDelivery) CreateDelivery(ctx context.Context, order *domain.Order, address *domain.CustomerAddress) (*output.DeliveryConfirmation, error) {
 	return &output.DeliveryConfirmation{ExternalDeliveryID: "uber-123", TrackingURL: "https://tracking.uber.com/123"}, nil
 }
+func (m *mockDelivery) CancelDelivery(ctx context.Context, id string) error { return nil }
 
 type mockPayment struct{}
 
@@ -360,8 +369,8 @@ func TestWhatsAppAgent_ToolConfigGating(t *testing.T) {
 	for _, expectedFn := range []string{
 		"consultar_catalogo",
 		"obtener_direcciones_cliente",
-		"guardar_direccion_cliente",
-		"cotizar_envio",
+		"save_customer_address",
+		"calculate_delivery_cost",
 		"crear_pedido_con_link_pago",
 		"verificar_estado_pago",
 	} {
@@ -462,4 +471,3 @@ func TestWhatsAppAgent_TransferDisambiguationAndEdgeCases(t *testing.T) {
 		t.Fatalf("expected ALREADY_USED, got %v", resReused)
 	}
 }
-

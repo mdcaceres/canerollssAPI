@@ -17,10 +17,12 @@ func NewCustomerAddressRepository(db *gorm.DB) *customerAddressRepository {
 
 func (r *customerAddressRepository) Save(address *domain.CustomerAddress) error {
 	if address.IsDefault {
-		// Reset previous default for this customer
-		r.db.Model(&domain.CustomerAddress{}).
-			Where("customer_phone = ?", address.CustomerPhone).
-			Update("is_default", false)
+		return r.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&domain.CustomerAddress{}).Where("customer_phone = ?", address.CustomerPhone).Update("is_default", false).Error; err != nil {
+				return err
+			}
+			return tx.Save(address).Error
+		})
 	}
 	return r.db.Save(address).Error
 }

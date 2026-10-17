@@ -5,6 +5,7 @@ import (
 	"canerollss/adapters/input/http/routes"
 	"canerollss/adapters/output/datasource"
 	"canerollss/adapters/output/delivery"
+	"canerollss/adapters/output/geocoding"
 	"canerollss/adapters/output/payment"
 	"canerollss/adapters/output/repository"
 	"canerollss/adapters/output/whatsapp"
@@ -37,14 +38,20 @@ func SetupApp() *fiber.App {
 	orderUC := usecase.NewOrderUseCase(orderRepo, cashRepo, customerRepo, toppingRepo)
 	reportUC := usecase.NewReportUseCase(reportRepo, orderRepo)
 	customerUC := usecase.NewCustomerUseCase(customerRepo)
-	addressUC := usecase.NewAddressUseCase(customerAddressRepo)
+	var geocodingPort output.GeocodingProvider
+	if strings.EqualFold(os.Getenv("USE_MOCK_PROVIDERS"), "false") {
+		geocodingPort = geocoding.NewGoogleMapsProvider()
+	} else {
+		geocodingPort = geocoding.NewMockGeocodingProvider()
+	}
+	addressUC := usecase.NewAddressUseCase(customerAddressRepo, geocodingPort)
 
 	// External logistics & payment providers (Mock by default or configured)
 	useMock := os.Getenv("USE_MOCK_PROVIDERS")
 	var deliveryPort output.DeliveryProvider
 	var paymentPort output.PaymentProvider
 
-	if strings.EqualFold(useMock, "false") && os.Getenv("UBER_DIRECT_CUSTOMER_ID") != "" {
+	if strings.EqualFold(useMock, "false") {
 		deliveryPort = delivery.NewUberDirectProvider()
 	} else {
 		deliveryPort = delivery.NewMockDeliveryProvider()
@@ -57,18 +64,23 @@ func SetupApp() *fiber.App {
 	}
 
 	waClient := whatsapp.NewWhatsAppClient()
+	deliveryUC := usecase.NewDeliveryUseCase(orderRepo, customerAddressRepo, customerRepo, cashRepo, deliveryPort, waClient)
+	// Payment reconciliation never receives deliveryUC. Courier dispatch requires the authenticated operator route.
+	// AUTO_DISPATCH_ON_PAYMENT defaults to false and cannot enable agent or payment-triggered dispatch.
 	reconUC := usecase.NewPaymentReconciliationUseCase(orderRepo, cashRepo, paymentPort)
 	agentUC := usecase.NewWhatsAppAgentUseCase(orderUC, addressUC, customerRepo, toppingRepo, cashRepo, deliveryPort, paymentPort, reconUC)
+	agentUC.SetDeliveryUseCase(deliveryUC)
 
 	authHandler := handlers.NewAuthHandler(authUC)
 	cashHandler := handlers.NewCashHandler(cashUC)
 	catalogHandler := handlers.NewCatalogHandler(catalogUC)
-	orderHandler := handlers.NewOrderHandler(orderUC)
+	orderHandler := handlers.NewOrderHandler(orderUC, deliveryUC)
 	reportHandler := handlers.NewReportHandler(reportUC)
 	customerHandler := handlers.NewCustomerHandler(customerUC)
 	waHandler := handlers.NewWhatsAppHandler(agentUC, waClient)
 	mpWebhookSecret := os.Getenv("MP_WEBHOOK_SECRET")
 	mpHandler := handlers.NewMercadoPagoHandler(orderUC, paymentPort, reconUC, waClient, mpWebhookSecret)
+	uberHandler := handlers.NewUberDeliveryWebhookHandler(deliveryUC, os.Getenv("UBER_WEBHOOK_SECRET"))
 
 	app := fiber.New()
 
@@ -84,7 +96,7 @@ func SetupApp() *fiber.App {
 	)
 
 	routes.MapUrls(app, authHandler, cashHandler, catalogHandler, orderHandler, reportHandler, customerHandler)
-	routes.MapWebhookRoutes(app, waHandler, mpHandler)
+	routes.MapWebhookRoutes(app, waHandler, mpHandler, uberHandler)
 
 	return app
 }

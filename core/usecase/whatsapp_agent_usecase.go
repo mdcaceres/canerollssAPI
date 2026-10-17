@@ -5,6 +5,7 @@ import (
 	"canerollss/ports/input"
 	"canerollss/ports/output"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -24,9 +25,14 @@ type WhatsAppAgentUseCase struct {
 	toppingRepo      output.ToppingRepository
 	cashRepo         output.CashRegisterRepository
 	deliveryPort     output.DeliveryProvider
+	deliveryUseCase  *DeliveryUseCase
 	paymentPort      output.PaymentProvider
 	apiKey           string
 	promptBuilder    *AgentPromptBuilder
+}
+
+func (a *WhatsAppAgentUseCase) SetDeliveryUseCase(delivery *DeliveryUseCase) {
+	a.deliveryUseCase = delivery
 }
 
 func NewWhatsAppAgentUseCase(
@@ -148,8 +154,8 @@ func (a *WhatsAppAgentUseCase) ResolveToolConfig(isRegisterOpen bool) *genai.Too
 			AllowedFunctionNames: []string{
 				"consultar_catalogo",
 				"obtener_direcciones_cliente",
-				"guardar_direccion_cliente",
-				"cotizar_envio",
+				"save_customer_address",
+				"calculate_delivery_cost",
 				"crear_pedido_con_link_pago",
 				"verificar_estado_pago",
 			},
@@ -188,14 +194,14 @@ func (a *WhatsAppAgentUseCase) getToolsDeclarations() []*genai.Tool {
 					},
 				},
 				{
-					Name:        "guardar_direccion_cliente",
-					Description: "Guarda una nueva dirección de entrega para el cliente actual.",
+					Name:        "save_customer_address",
+					Description: "Valida y guarda una dirección exacta dentro de Córdoba Capital para el cliente actual.",
 					Parameters: &genai.Schema{
 						Type: genai.TypeObject,
 						Properties: map[string]*genai.Schema{
 							"calle_y_altura": {
 								Type:        genai.TypeString,
-								Description: "Calle y número de la dirección (ej: 'Av. Corrientes 1234').",
+								Description: "Calle y altura en Córdoba Capital (ej: 'Av. Colón 1500').",
 							},
 							"piso_depto_referencia": {
 								Type:        genai.TypeString,
@@ -210,8 +216,8 @@ func (a *WhatsAppAgentUseCase) getToolsDeclarations() []*genai.Tool {
 					},
 				},
 				{
-					Name:        "cotizar_envio",
-					Description: "Cotiza el costo de entrega hacia una de las direcciones guardadas del cliente antes de confirmar el pedido.",
+					Name:        "calculate_delivery_cost",
+					Description: "Cotiza el envío a una dirección validada y actualiza el costo del pedido activo en borrador.",
 					Parameters: &genai.Schema{
 						Type: genai.TypeObject,
 						Properties: map[string]*genai.Schema{
@@ -443,7 +449,7 @@ func (a *WhatsAppAgentUseCase) executeTool(
 		}
 		return map[string]any{"direcciones": list}
 
-	case "guardar_direccion_cliente":
+	case "save_customer_address":
 		calle, _ := args["calle_y_altura"].(string)
 		depto, _ := args["piso_depto_referencia"].(string)
 		alias, _ := args["alias"].(string)
@@ -455,13 +461,15 @@ func (a *WhatsAppAgentUseCase) executeTool(
 			return map[string]any{"error": err.Error()}
 		}
 		return map[string]any{
-			"status":     "guardada",
-			"address_id": addr.ID,
-			"alias":      addr.Alias,
-			"direccion":  addr.StreetAndNumber,
+			"status":        "guardada",
+			"address_id":    addr.ID,
+			"alias":         addr.Alias,
+			"direccion":     addr.FormattedAddress,
+			"barrio":        addr.Neighborhood,
+			"codigo_postal": addr.ZipCode,
 		}
 
-	case "cotizar_envio":
+	case "calculate_delivery_cost":
 		addrIDVal, ok := args["address_id"]
 		if !ok {
 			return map[string]any{"error": "address_id requerido"}
@@ -483,15 +491,34 @@ func (a *WhatsAppAgentUseCase) executeTool(
 		if err != nil || addr == nil {
 			return map[string]any{"error": "Dirección no encontrada"}
 		}
-		quote, err := a.deliveryPort.QuoteDelivery(ctx, addr)
+		if addr.CustomerPhone != customerPhone {
+			return map[string]any{"error": "La dirección no pertenece al cliente"}
+		}
+		var quote *output.DeliveryQuote
+		var draft *domain.Order
+		if a.deliveryUseCase != nil {
+			quote, draft, err = a.deliveryUseCase.QuoteForDraft(ctx, customerPhone, addrID)
+		} else {
+			quote, err = a.deliveryPort.QuoteDelivery(ctx, addr)
+		}
 		if err != nil {
+			if errors.Is(err, output.ErrOutsideCoverage) {
+				return map[string]any{"error": "La dirección está fuera de la zona de envío. Podés retirar tu pedido en el local."}
+			}
 			return map[string]any{"error": fmt.Sprintf("No se pudo cotizar envío: %v", err)}
+		}
+		var total any
+		if draft != nil {
+			total = draft.TotalAmount
 		}
 		return map[string]any{
 			"costo_envio":   quote.EstimatedFee,
 			"moneda":        quote.Currency,
 			"duracion_min":  quote.DurationMin,
 			"direccion":     addr.StreetAndNumber,
+			"quote_id":      quote.QuoteID,
+			"expira":        quote.ExpiresAt,
+			"total_a_pagar": total,
 		}
 
 	case "crear_pedido_con_link_pago":
@@ -668,6 +695,7 @@ func (a *WhatsAppAgentUseCase) executeCrearPedido(
 	deliveryType := domain.DeliveryTypePickup
 	var deliveryCost float64
 	var addressIDPtr *uint
+	var deliveryQuote *output.DeliveryQuote
 
 	if strings.EqualFold(modalidad, "envio") {
 		deliveryType = domain.DeliveryTypeDelivery
@@ -688,11 +716,24 @@ func (a *WhatsAppAgentUseCase) executeCrearPedido(
 			addr, err := a.addressUseCase.GetAddressByID(addrID)
 			if err == nil && addr != nil {
 				addressIDPtr = &addrID
-				quote, err := a.deliveryPort.QuoteDelivery(ctx, addr)
-				if err == nil && quote != nil {
-					deliveryCost = quote.EstimatedFee
+				if addr.CustomerPhone != customerPhone {
+					return map[string]any{"error": "La dirección no pertenece al cliente"}
 				}
+				var quote *output.DeliveryQuote
+				if a.deliveryUseCase != nil {
+					quote, err = a.deliveryUseCase.Quote(ctx, addr)
+				} else {
+					quote, err = a.deliveryPort.QuoteDelivery(ctx, addr)
+				}
+				if err != nil {
+					return map[string]any{"error": fmt.Sprintf("No se pudo cotizar envío: %v", err)}
+				}
+				deliveryCost = quote.EstimatedFee
+				deliveryQuote = quote
 			}
+		}
+		if addressIDPtr == nil {
+			return map[string]any{"error": "Necesitamos una dirección validada para el envío."}
 		}
 	}
 
@@ -706,20 +747,28 @@ func (a *WhatsAppAgentUseCase) executeCrearPedido(
 		DeliveryCost:  deliveryCost,
 		Items:         orderItems,
 	}
+	if deliveryQuote != nil {
+		now := time.Now()
+		order.DeliveryQuoteID = deliveryQuote.QuoteID
+		order.DeliveryQuotedAt = &now
+		order.DeliveryQuoteExpiresAt = &deliveryQuote.ExpiresAt
+	}
 
 	if err := a.orderUseCase.CreateOrder(order); err != nil {
 		return map[string]any{"error": fmt.Sprintf("Error creando orden: %v", err)}
 	}
+	amounts := a.orderUseCase.Amounts(order)
 
 	return map[string]any{
-		"pedido_id":     order.ID,
-		"status":        order.Status,
-		"delivery_type": order.DeliveryType,
-		"costo_envio":   order.DeliveryCost,
-		"total_a_pagar": order.TotalAmount,
-		"alias_pago":    "Caneroll.mp",
-		"titular_pago":  "Ivonne Abreu",
-		"mensaje":       "Pedido registrado con éxito en espera de transferencia al Alias Caneroll.mp.",
+		"pedido_id":          order.ID,
+		"status":             order.Status,
+		"delivery_type":      order.DeliveryType,
+		"costo_envio":        order.DeliveryCost,
+		"subtotal_productos": amounts.Products,
+		"total_a_pagar":      order.TotalAmount,
+		"alias_pago":         "Caneroll.mp",
+		"titular_pago":       "Ivonne Abreu",
+		"mensaje":            "Pedido registrado con éxito en espera de transferencia al Alias Caneroll.mp.",
 	}
 }
 
@@ -814,14 +863,29 @@ func (a *WhatsAppAgentUseCase) handleFallback(
 		total, _ := res["total_a_pagar"].(float64)
 		id, _ := res["pedido_id"].(uint)
 
-		return fmt.Sprintf("✨ ¡Gracias por tu pedido! ✨\n\n🧾 Pedido: Pedido #%d (1 Combo %s)\n🛵 Envío: %s\n\nTotal: *$%.2f*\n\n📲 Alias: Caneroll.mp\n👤 A nombre de: Ivonne Abreu\n\nUna vez realizada la transferencia, avisame 'ya pagué', 'ya transferí' o mandame el comprobante 🤎", id, chosenTopping.Name, modalidad, total), history, nil
+		shipping, _ := res["costo_envio"].(float64)
+		return fmt.Sprintf("✨ ¡Gracias por tu pedido! ✨\n\n🧾 Pedido: Pedido #%d (1 Combo %s)\n🛵 Modalidad: %s\nProductos: $%.2f ARS\nEnvío: $%.2f ARS\nTotal: *$%.2f ARS*\n\n📲 Alias: Caneroll.mp\n👤 A nombre de: Ivonne Abreu\n\nUna vez realizada la transferencia, avisame 'ya pagué', 'ya transferí' o mandame el comprobante 🤎", id, chosenTopping.Name, modalidad, total-shipping, shipping, total), history, nil
 	}
 
 	// 3. Address inquiry / save
 	if strings.Contains(lower, "direcci") || strings.Contains(lower, "calle") || strings.Contains(lower, "domicilio") {
 		if strings.Contains(lower, "guard") || strings.Contains(lower, "av.") || strings.Contains(lower, "calle") {
-			addr, _ := a.addressUseCase.SaveAddress(sessionCtx.CustomerPhone, "Casa", userPrompt, "")
-			quote, _ := a.deliveryPort.QuoteDelivery(ctx, addr)
+			addr, err := a.addressUseCase.SaveAddress(sessionCtx.CustomerPhone, "Casa", userPrompt, "")
+			if err != nil {
+				return err.Error(), history, nil
+			}
+			var quote *output.DeliveryQuote
+			if a.deliveryUseCase != nil {
+				quote, err = a.deliveryUseCase.Quote(ctx, addr)
+			} else {
+				quote, err = a.deliveryPort.QuoteDelivery(ctx, addr)
+			}
+			if errors.Is(err, output.ErrOutsideCoverage) {
+				return "Esa dirección queda fuera de nuestra zona de envío. Podés retirar tu pedido en el local.", history, nil
+			}
+			if err != nil {
+				return "Guardé tu dirección, pero no pude cotizar el envío ahora. Probá de nuevo o elegí retiro en el local.", history, nil
+			}
 			return fmt.Sprintf("¡Excelente! Guardé tu dirección: *%s*. El costo de envío estimado a esa zona es de *$%.2f ARS*. ¿Confirmás tu pedido con esta dirección?", addr.StreetAndNumber, quote.EstimatedFee), history, nil
 		}
 		addrs, _ := a.addressUseCase.GetCustomerAddresses(sessionCtx.CustomerPhone)
@@ -882,4 +946,3 @@ func isNumericString(s string) bool {
 	}
 	return true
 }
-

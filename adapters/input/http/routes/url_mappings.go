@@ -26,6 +26,7 @@ func MapUrls(app *fiber.App, authH *handlers.AuthHandler, cashH *handlers.CashHa
 	micro.Post("/customers", middleware.Protected(), customerH.Create)
 	micro.Get("/customers/:id", middleware.Protected(), customerH.GetByID)
 	micro.Post("/orders", middleware.Protected(), orderH.CreateOrder)
+	micro.Post("/orders/:id/dispatch-delivery", middleware.StoreOperator(), orderH.DispatchDelivery)
 	micro.Patch("/orders/:id/cancel", middleware.Protected(), orderH.CancelOrder)
 	micro.Post("/monthly/close", middleware.Protected(), reportH.CloseMonth)
 	micro.Get("/monthly", middleware.Protected(), reportH.GetMonthlyClosing)

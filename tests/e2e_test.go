@@ -6,15 +6,82 @@ import (
 	"canerollss/adapters/output/payment"
 	"canerollss/app"
 	"canerollss/core/domain"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestDeliveryDispatchAndWebhookFlow(t *testing.T) {
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_NAME", filepath.Join(t.TempDir(), "delivery.db"))
+	t.Setenv("USE_MOCK_PROVIDERS", "true")
+	t.Setenv("UBER_WEBHOOK_SECRET", "test-uber-secret")
+	t.Setenv("JWT_SECRET", "test-jwt-secret")
+	t.Setenv("ADMIN_USERNAME", "admin")
+	t.Setenv("ADMIN_PASSWORD", "admin123")
+	appUnderTest := app.SetupApp()
+	db := datasource.GetDB()
+	customer := domain.Customer{Name: "Ana", Whatsapp: "5493515551234"}
+	if err := db.Create(&customer).Error; err != nil {
+		t.Fatal(err)
+	}
+	address := domain.CustomerAddress{CustomerPhone: customer.Whatsapp, StreetAndNumber: "Av. Colón 1500", FormattedAddress: "Av. Colón 1500, Córdoba", City: "Córdoba", ZipCode: "5000", Lat: -31.4031, Lng: -64.2026, ApartmentNotes: "4to B"}
+	if err := db.Create(&address).Error; err != nil {
+		t.Fatal(err)
+	}
+	order := domain.Order{CashRegisterID: 1, CustomerID: customer.ID, Status: domain.OrderStatusPaid, DeliveryType: domain.DeliveryTypeDelivery, AddressID: &address.ID, TotalAmount: 8500, DeliveryCost: 1500}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"username":"admin","password":"admin123"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loginResp, err := appUnderTest.Test(login)
+	if err != nil || loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status=%v err=%v", loginResp, err)
+	}
+	var session *http.Cookie
+	for _, cookie := range loginResp.Cookies() {
+		if cookie.Name == "session_token" {
+			session = cookie
+		}
+	}
+	if session == nil {
+		t.Fatal("missing operator session")
+	}
+	dispatch := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/orders/%d/dispatch-delivery", order.ID), nil)
+	dispatch.AddCookie(session)
+	dispatchResp, err := appUnderTest.Test(dispatch)
+	if err != nil || dispatchResp.StatusCode != http.StatusOK {
+		t.Fatalf("dispatch status=%v err=%v", dispatchResp, err)
+	}
+	db.First(&order, order.ID)
+	if order.Status != domain.OrderStatusDispatched || order.ExternalDeliveryID == "" || order.TrackingURL == "" {
+		t.Fatalf("dispatch not persisted: %+v", order)
+	}
+	payload, _ := json.Marshal(map[string]string{"kind": "event.delivery_status", "delivery_id": order.ExternalDeliveryID, "status": "delivered"})
+	mac := hmac.New(sha256.New, []byte("test-uber-secret"))
+	mac.Write(payload)
+	webhook := httptest.NewRequest(http.MethodPost, "/webhook/uber-delivery", bytes.NewReader(payload))
+	webhook.Header.Set("X-Uber-Signature", hex.EncodeToString(mac.Sum(nil)))
+	webhookResp, err := appUnderTest.Test(webhook)
+	if err != nil || webhookResp.StatusCode != http.StatusOK {
+		t.Fatalf("webhook status=%v err=%v", webhookResp, err)
+	}
+	db.First(&order, order.ID)
+	if order.Status != domain.OrderStatusDelivered {
+		t.Fatalf("status=%s", order.Status)
+	}
+}
 
 func TestEndToEnd_WhatsAppOrderingFlow(t *testing.T) {
 	// ISOLATION: Use dedicated SQLite file to guarantee ZERO impact on Docker / Production MySQL

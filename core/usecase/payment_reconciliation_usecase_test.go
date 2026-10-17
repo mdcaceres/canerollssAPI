@@ -50,6 +50,14 @@ func (m *memoryOrderRepo) GetByExternalPaymentID(extID string) (*domain.Order, e
 	}
 	return nil, nil
 }
+func (m *memoryOrderRepo) GetByExternalDeliveryID(id string) (*domain.Order, error) {
+	for _, o := range m.orders {
+		if o.ExternalDeliveryID == id {
+			return o, nil
+		}
+	}
+	return nil, nil
+}
 
 func (m *memoryOrderRepo) Update(o *domain.Order) error {
 	m.orders[o.ID] = o

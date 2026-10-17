@@ -14,6 +14,19 @@ type OrderUseCase struct {
 	toppingRepo  output.ToppingRepository
 }
 
+type OrderAmounts struct {
+	Products float64 `json:"products"`
+	Delivery float64 `json:"delivery"`
+	Total    float64 `json:"total"`
+}
+
+func (u *OrderUseCase) Amounts(order *domain.Order) OrderAmounts {
+	if order == nil {
+		return OrderAmounts{}
+	}
+	return OrderAmounts{Products: order.TotalAmount - order.DeliveryCost, Delivery: order.DeliveryCost, Total: order.TotalAmount}
+}
+
 func NewOrderUseCase(o output.OrderRepository, c output.CashRegisterRepository, cr output.CustomerRepository, tr output.ToppingRepository) *OrderUseCase {
 	return &OrderUseCase{orderRepo: o, cashRepo: c, customerRepo: cr, toppingRepo: tr}
 }
@@ -108,4 +121,3 @@ func (u *OrderUseCase) GetPendingOrderByCustomer(registerID uint, customerID uin
 	}
 	return nil, nil
 }
-

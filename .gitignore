@@ -10,6 +10,8 @@
 *.test
 *.out
 vendor/
+__pycache__/
+*.pyc
 
 # IDE and OS
 .idea/
@@ -17,4 +19,4 @@ vendor/
 *.swp
 *~
 .DS_Store
-Thumbs.db
+Thumbs.db

@@ -4,16 +4,45 @@ import (
 	"canerollss/adapters/input/http/dto"
 	"canerollss/core/domain"
 	"canerollss/core/usecase"
+	"context"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type OrderHandler struct {
-	orderUC *usecase.OrderUseCase
+	orderUC    *usecase.OrderUseCase
+	deliveryUC *usecase.DeliveryUseCase
 }
 
-func NewOrderHandler(uc *usecase.OrderUseCase) *OrderHandler {
-	return &OrderHandler{orderUC: uc}
+func NewOrderHandler(uc *usecase.OrderUseCase, delivery ...*usecase.DeliveryUseCase) *OrderHandler {
+	h := &OrderHandler{orderUC: uc}
+	if len(delivery) > 0 {
+		h.deliveryUC = delivery[0]
+	}
+	return h
+}
+
+func (h *OrderHandler) DispatchDelivery(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid order id"})
+	}
+	if h.deliveryUC == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "delivery service unavailable"})
+	}
+	order, err := h.deliveryUC.Dispatch(context.Background(), uint(id))
+	if err != nil {
+		if order != nil && order.Status == domain.OrderStatusDispatched {
+			return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"order_id": order.ID, "status": order.Status, "tracking_url": order.TrackingURL, "warning": err.Error()})
+		}
+		status := fiber.StatusBadGateway
+		if strings.Contains(err.Error(), "must be PAID") || strings.Contains(err.Error(), "validated delivery address") || strings.Contains(err.Error(), "required") {
+			status = fiber.StatusBadRequest
+		}
+		return c.Status(status).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"order_id": order.ID, "status": order.Status, "external_delivery_id": order.ExternalDeliveryID, "tracking_url": order.TrackingURL})
 }
 
 func (h *OrderHandler) CreateOrder(c *fiber.Ctx) error {

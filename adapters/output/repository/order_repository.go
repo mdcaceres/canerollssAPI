@@ -21,8 +21,17 @@ func (r *orderRepository) Save(order *domain.Order) error {
 
 func (r *orderRepository) GetByID(id uint) (*domain.Order, error) {
 	var order domain.Order
-	err := r.db.Preload("Items.Topping").First(&order, id).Error
+	err := r.db.Preload("Customer").Preload("Address").Preload("Items.Topping").First(&order, id).Error
 	return &order, err
+}
+
+func (r *orderRepository) GetByExternalDeliveryID(externalDeliveryID string) (*domain.Order, error) {
+	var order domain.Order
+	err := r.db.Where("external_delivery_id = ?", externalDeliveryID).First(&order).Error
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
 }
 
 func (r *orderRepository) GetByRegisterID(regID uint) ([]domain.Order, error) {

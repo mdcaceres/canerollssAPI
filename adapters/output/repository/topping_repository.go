@@ -2,6 +2,7 @@ package repository
 
 import (
 	"canerollss/core/domain"
+	"errors"
 
 	"gorm.io/gorm"
 )
@@ -25,6 +26,9 @@ func (r *toppingRepository) Save(topping *domain.Topping) error {
 func (r *toppingRepository) GetByID(id uint) (*domain.Topping, error) {
 	var topping domain.Topping
 	err := r.db.First(&topping, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("topping not found")
+	}
 	return &topping, err
 }
 

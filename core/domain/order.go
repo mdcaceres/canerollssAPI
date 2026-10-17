@@ -9,22 +9,44 @@ import (
 type OrderStatus string
 
 const (
-	OrderStatusCompleted OrderStatus = "COMPLETED"
-	OrderStatusCancelled OrderStatus = "CANCELLED"
+	OrderStatusPendingPayment OrderStatus = "PENDING_PAYMENT"
+	OrderStatusPaid           OrderStatus = "PAID"
+	OrderStatusPreparing      OrderStatus = "PREPARING"
+	OrderStatusDispatched     OrderStatus = "DISPATCHED"
+	OrderStatusDelivered      OrderStatus = "DELIVERED"
+	OrderStatusCompleted      OrderStatus = "COMPLETED"
+	OrderStatusCancelled      OrderStatus = "CANCELLED"
+)
+
+type DeliveryType string
+
+const (
+	DeliveryTypePickup   DeliveryType = "PICKUP"
+	DeliveryTypeDelivery DeliveryType = "DELIVERY"
 )
 
 type Order struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	CashRegisterID uint           `gorm:"not null;index" json:"cash_register_id"`
-	CustomerID     uint           `gorm:"not null;index" json:"customer_id"`
-	Customer       Customer       `gorm:"foreignKey:CustomerID" json:"customer"`
-	Status         OrderStatus    `gorm:"type:varchar(20);default:'PENDING';not null" json:"status"`
-	TotalAmount    float64        `gorm:"not null" json:"total_amount"`
-	Note           string         `gorm:"size:255" json:"note,omitempty"`
-	Items          []OrderItem    `gorm:"foreignKey:OrderID" json:"items"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                 uint             `gorm:"primaryKey" json:"id"`
+	CashRegisterID     uint             `gorm:"not null;index" json:"cash_register_id"`
+	CustomerID         uint             `gorm:"not null;index" json:"customer_id"`
+	Customer           Customer         `gorm:"foreignKey:CustomerID" json:"customer"`
+	Status             OrderStatus      `gorm:"type:varchar(30);default:'PENDING_PAYMENT';not null" json:"status"`
+	DeliveryType       DeliveryType     `gorm:"type:varchar(20);default:'PICKUP';not null" json:"delivery_type"`
+	AddressID          *uint            `gorm:"index" json:"address_id,omitempty"`
+	Address            *CustomerAddress `gorm:"foreignKey:AddressID" json:"address,omitempty"`
+	DeliveryCost       float64          `gorm:"default:0" json:"delivery_cost"`
+	TotalAmount        float64          `gorm:"not null" json:"total_amount"`
+	PaymentMethod      string           `gorm:"type:varchar(30);default:'TRANSFER_ALIAS'" json:"payment_method"`
+	PaymentLink        string           `gorm:"size:500" json:"payment_link,omitempty"`
+	ExternalPaymentID  string           `gorm:"size:100;index" json:"external_payment_id,omitempty"`
+	ExternalDeliveryID string           `gorm:"size:100" json:"external_delivery_id,omitempty"`
+	TrackingURL        string           `gorm:"size:500" json:"tracking_url,omitempty"`
+	Note               string           `gorm:"size:255" json:"note,omitempty"`
+	PaidAt             *time.Time       `json:"paid_at,omitempty"`
+	Items              []OrderItem      `gorm:"foreignKey:OrderID" json:"items"`
+	CreatedAt          time.Time        `json:"created_at"`
+	UpdatedAt          time.Time        `json:"updated_at"`
+	DeletedAt          gorm.DeletedAt   `gorm:"index" json:"-"`
 }
 
 type OrderItem struct {

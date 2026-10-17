@@ -50,18 +50,34 @@ func (u *OrderUseCase) CreateOrder(order *domain.Order) error {
 		totalAmount += order.Items[i].Subtotal
 	}
 
-	order.TotalAmount = totalAmount
-	order.Status = domain.OrderStatusCompleted
+	order.TotalAmount = totalAmount + order.DeliveryCost
+	if order.Status == "" {
+		order.Status = domain.OrderStatusCompleted
+	}
 
 	customer.TotalOrders++
 	if customer.FirstOrderAt == nil {
-		customer.FirstOrderAt = new(time.Now())
+		now := time.Now()
+		customer.FirstOrderAt = &now
 	}
 	if err := u.customerRepo.Update(customer); err != nil {
 		return err
 	}
 
 	return u.orderRepo.Save(order)
+}
+
+func (u *OrderUseCase) GetOrderByID(orderID uint) (*domain.Order, error) {
+	return u.orderRepo.GetByID(orderID)
+}
+
+func (u *OrderUseCase) UpdateOrderStatus(orderID uint, status domain.OrderStatus) error {
+	order, err := u.orderRepo.GetByID(orderID)
+	if err != nil {
+		return err
+	}
+	order.Status = status
+	return u.orderRepo.Update(order)
 }
 
 func (u *OrderUseCase) CancelOrder(orderID uint) error {
@@ -75,3 +91,21 @@ func (u *OrderUseCase) CancelOrder(orderID uint) error {
 	order.Status = domain.OrderStatusCancelled
 	return u.orderRepo.Update(order)
 }
+
+func (u *OrderUseCase) UpdateOrder(order *domain.Order) error {
+	return u.orderRepo.Update(order)
+}
+
+func (u *OrderUseCase) GetPendingOrderByCustomer(registerID uint, customerID uint) (*domain.Order, error) {
+	orders, err := u.orderRepo.GetByRegisterID(registerID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range orders {
+		if orders[i].CustomerID == customerID && orders[i].Status == domain.OrderStatusPendingPayment {
+			return &orders[i], nil
+		}
+	}
+	return nil, nil
+}
+

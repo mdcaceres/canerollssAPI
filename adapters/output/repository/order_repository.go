@@ -31,6 +31,15 @@ func (r *orderRepository) GetByRegisterID(regID uint) ([]domain.Order, error) {
 	return orders, err
 }
 
+func (r *orderRepository) GetByExternalPaymentID(externalPaymentID string) (*domain.Order, error) {
+	var order domain.Order
+	err := r.db.Where("external_payment_id = ?", externalPaymentID).First(&order).Error
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
 func (r *orderRepository) Update(order *domain.Order) error {
 	return r.db.Save(order).Error
 }

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GeminiToolsDeclarations",
+  "description": "Function Declarations for google.golang.org/genai (model: gemini-2.5-flash)",
+  "tools": [
+    {
+      "name": "obtener_direcciones_cliente",
+      "description": "Obtiene la lista de direcciones guardadas previamente por el cliente actual. No requiere parámetros de teléfono ya que el número se inyecta de forma segura desde la sesión activa de WhatsApp (wa_id).",
+      "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+      }
+    },
+    {
+      "name": "guardar_direccion_cliente",
+      "description": "Guarda una nueva dirección de entrega para el cliente actual en su historial. El número de teléfono se asocia automáticamente.",
+      "parameters": {
+        "type": "OBJECT",
+        "properties": {
+          "calle_y_altura": {
+            "type": "STRING",
+            "description": "Nombre de la calle y número de altura (ej: 'Av. Corrientes 1234' o 'San Martín 456')."
+          },
+          "piso_depto_referencia": {
+            "type": "STRING",
+            "description": "Detalles adicionales como piso, departamento, timbre o referencias (ej: 'Piso 3 Depto B, timbre blanco')."
+          },
+          "alias": {
+            "type": "STRING",
+            "description": "Nombre corto identificatorio de la dirección (ej: 'Casa', 'Trabajo', 'Depto'). Por defecto 'Casa'."
+          }
+        },
+        "required": ["calle_y_altura"]
+      }
+    },
+    {
+      "name": "cotizar_envio",
+      "description": "Cotiza el costo del envío a domicilio hacia una de las direcciones guardadas del cliente antes de confirmar el pedido.",
+      "parameters": {
+        "type": "OBJECT",
+        "properties": {
+          "address_id": {
+            "type": "INTEGER",
+            "description": "ID numérico de la dirección del cliente obtenida previamente con obtener_direcciones_cliente."
+          }
+        },
+        "required": ["address_id"]
+      }
+    },
+    {
+      "name": "crear_pedido_con_link_pago",
+      "description": "Crea formalmente el pedido en estado PENDING_PAYMENT luego de que el cliente haya confirmado explícitamente el resumen. Soporta múltiples sabores e ítems en un mismo pedido, asocia el costo de envío si aplica, y genera el enlace de pago de Mercado Pago.",
+      "parameters": {
+        "type": "OBJECT",
+        "properties": {
+          "items": {
+            "type": "ARRAY",
+            "description": "Lista de productos incluidos en el pedido.",
+            "items": {
+              "type": "OBJECT",
+              "properties": {
+                "sabor": {
+                  "type": "STRING",
+                  "description": "Nombre del sabor seleccionado (ej: 'Clasico', 'Dulce de leche', 'Avellana', 'Oreo', 'Pistacho premium')."
+                },
+                "formato": {
+                  "type": "STRING",
+                  "description": "Formato: 'individual' (1 roll) o 'combo' (caja de 2 rolls).",
+                  "enum": ["individual", "combo"]
+                },
+                "cantidad": {
+                  "type": "INTEGER",
+                  "description": "Cantidad de unidades o combos de este sabor."
+                }
+              },
+              "required": ["sabor", "formato", "cantidad"]
+            }
+          },
+          "modalidad_entrega": {
+            "type": "STRING",
+            "description": "Modalidad de entrega: 'retiro' para retirar en tienda o 'envio' para delivery.",
+            "enum": ["retiro", "envio"]
+          },
+          "address_id": {
+            "type": "INTEGER",
+            "description": "ID de la dirección de entrega elegida. Obligatorio si modalidad_entrega es 'envio'."
+          }
+        },
+        "required": ["items", "modalidad_entrega"]
+      }
+    },
+    {
+      "name": "verificar_estado_pago",
+      "description": "Verifica el estado actual de pago de un pedido existente en la pasarela de pagos (Mercado Pago). Si el pago fue acreditado, actualiza el pedido a PAID.",
+      "parameters": {
+        "type": "OBJECT",
+        "properties": {
+          "pedido_id": {
+            "type": "INTEGER",
+            "description": "ID numérico del pedido a consultar (ej: 42)."
+          }
+        },
+        "required": ["pedido_id"]
+      }
+    }
+  ]
+}

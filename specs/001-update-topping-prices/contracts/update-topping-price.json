@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UpdateToppingPricesContract",
+  "description": "API contract for updating individual and combo prices of a topping",
+  "endpoint": {
+    "path": "/api/toppings/{id}/price",
+    "method": "PATCH",
+    "security": [
+      {
+        "bearerAuth": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Unique identifier of the topping",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "single_price": {
+                "type": "number",
+                "minimum": 0,
+                "description": "New price for individual roll topping"
+              },
+              "combo_price": {
+                "type": "number",
+                "minimum": 0,
+                "description": "New price for combo roll topping"
+              }
+            },
+            "anyOf": [
+              { "required": ["single_price"] },
+              { "required": ["combo_price"] }
+            ],
+            "additionalProperties": false
+          },
+          "examples": {
+            "both_prices": {
+              "summary": "Update both single and combo prices",
+              "value": {
+                "single_price": 2.50,
+                "combo_price": 1.75
+              }
+            },
+            "single_price_only": {
+              "summary": "Update only single price",
+              "value": {
+                "single_price": 2.25
+              }
+            },
+            "combo_price_only": {
+              "summary": "Update only combo price",
+              "value": {
+                "combo_price": 1.50
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Topping prices updated successfully",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "integer" },
+                "name": { "type": "string" },
+                "single_price": { "type": "number" },
+                "combo_price": { "type": "number" },
+                "is_active": { "type": "boolean" },
+                "created_at": { "type": "string", "format": "date-time" },
+                "updated_at": { "type": "string", "format": "date-time" }
+              },
+              "required": ["id", "name", "single_price", "combo_price", "is_active", "created_at", "updated_at"]
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Validation error or malformed request payload",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "401": {
+        "description": "Unauthorized - Missing or invalid JWT token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "Topping not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

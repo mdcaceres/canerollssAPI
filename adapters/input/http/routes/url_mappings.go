@@ -17,6 +17,7 @@ func MapUrls(app *fiber.App, authH *handlers.AuthHandler, cashH *handlers.CashHa
 	micro.Post("/auth/logout", middleware.Protected(), authH.Logout)
 	micro.Get("/toppings", middleware.Protected(), catalogH.ListToppings)
 	micro.Post("/toppings", middleware.Protected(), catalogH.CreateTopping)
+	micro.Patch("/toppings/:id/price", middleware.Protected(), catalogH.UpdateToppingPrices)
 	micro.Post("/cash/open", middleware.Protected(), cashH.OpenRegister)
 	micro.Get("/cash/current", middleware.Protected(), cashH.GetCurrent)
 	micro.Post("/cash/close", middleware.Protected(), cashH.CloseRegister)

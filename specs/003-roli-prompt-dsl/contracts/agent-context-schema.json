@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentSessionContext",
+  "type": "object",
+  "properties": {
+    "current_time": {
+      "type": "string",
+      "description": "Human readable time in Argentina e.g. Sábado 17:15",
+      "example": "Sábado 17:15"
+    },
+    "customer_name": {
+      "type": "string",
+      "description": "WhatsApp contact name or 'Cliente'",
+      "example": "Matias"
+    },
+    "customer_phone": {
+      "type": "string",
+      "description": "WhatsApp phone number without spaces",
+      "pattern": "^[0-9]{10,15}$",
+      "example": "5491198765432"
+    },
+    "is_cash_register_open": {
+      "type": "boolean",
+      "description": "Indicates if the store is open for taking orders",
+      "example": true
+    },
+    "has_saved_addresses": {
+      "type": "boolean",
+      "description": "True if customer has 1 or more addresses registered",
+      "example": true
+    },
+    "pending_order_id": {
+      "type": "string",
+      "description": "Active pending order ID if awaiting payment confirmation",
+      "example": "12"
+    }
+  },
+  "required": [
+    "current_time",
+    "customer_name",
+    "customer_phone",
+    "is_cash_register_open",
+    "has_saved_addresses"
+  ]
+}

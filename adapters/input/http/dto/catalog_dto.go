@@ -13,3 +13,9 @@ type UpdateToppingRequest struct {
 	ComboPrice  float64 `json:"combo_price" validate:"omitempty,min=0"`
 	IsActive    *bool   `json:"is_active" validate:"omitempty"`
 }
+
+type UpdateToppingPriceRequest struct {
+	SinglePrice *float64 `json:"single_price" validate:"omitempty,min=0"`
+	ComboPrice  *float64 `json:"combo_price" validate:"omitempty,min=0"`
+}
+
